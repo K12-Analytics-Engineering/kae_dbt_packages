@@ -131,7 +131,7 @@ update-dbt-project-evaluator: ## Update dbt_project_evaluator: make update-dbt-p
 
 .PHONY: help
 help: ## Show this help
-	@echo "kae-dbt-packages"
+	@echo "kae_dbt_packages"
 	@echo ""
 	@echo "Usage:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36mmake %-30s\033[0m %s\n", $$1, $$2}'

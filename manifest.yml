@@ -1,4 +1,4 @@
-# kae-dbt-packages manifest
+# kae_dbt_packages manifest
 # Tracks upstream package versions vendored in this monorepo.
 # Update this file whenever a package is added or upgraded.
 
