@@ -22,7 +22,7 @@ packages:
 
   kae_dbt:
     upstream: K12-Analytics-Engineering/kae_dbt
-    version: "0.6.0"
+    version: "0.6.1"
     require_dbt_version: ">=1.5.0"
     files_stripped:
       - pyproject.toml

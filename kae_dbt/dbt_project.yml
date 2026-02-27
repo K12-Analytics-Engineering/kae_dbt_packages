@@ -1,5 +1,5 @@
 name: 'kae_dbt'
-version: '0.6.0'
+version: '0.6.1'
 config-version: 2
 require-dbt-version: ">=1.5.0"
 
