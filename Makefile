@@ -32,9 +32,29 @@ verify: ## Verify no Python manifest files exist in any package
 # Release workflow
 # ──────────────────────────────────────────────
 
+# Compute next YYYY.MM.MICRO calver tag.
+# Scans existing tags for the current month (including bare YYYY.MM as .0),
+# then returns the next micro number.
+define next_version
+$(shell \
+	prefix=$$(date +%Y.%m); \
+	max=0; \
+	for t in $$(git tag --list "$$prefix" "$$prefix.*" 2>/dev/null); do \
+		micro=$${t##"$$prefix"}; \
+		if [ -z "$$micro" ]; then \
+			n=0; \
+		else \
+			n=$${micro#.}; \
+		fi; \
+		if [ "$$n" -ge "$$max" ] 2>/dev/null; then max=$$((n + 1)); fi; \
+	done; \
+	if [ "$$max" -eq 0 ]; then max=1; fi; \
+	echo "$$prefix.$$max")
+endef
+
 .PHONY: pr
-pr: verify ## Create a PR for package updates: make pr [v=2026.03]
-	@tag=$${v:-$$(date +%Y.%m)}; \
+pr: verify ## Create a PR for package updates: make pr [v=2026.03.1]
+	@tag=$${v:-$(next_version)}; \
 	branch="release/$$tag"; \
 	notes=$$($(MAKE) -s release-notes); \
 	echo ""; \
@@ -51,11 +71,10 @@ pr: verify ## Create a PR for package updates: make pr [v=2026.03]
 	echo "PR created. After merge, run: make tag v=$$tag"
 
 .PHONY: tag
-tag: ## Tag and release after PR merge: make tag v=2026.03
-	@test -n "$(v)" || (echo "Usage: make tag v=<calver>" && exit 1)
-	@tag=$(v); \
+tag: ## Tag and release after PR merge: make tag v=2026.03.1
+	@tag=$${v:-$(next_version)}; \
 	if git rev-parse "$$tag" >/dev/null 2>&1; then \
-		echo "Tag $$tag already exists. Use a different version (e.g., $$tag.1)"; \
+		echo "Tag $$tag already exists."; \
 		exit 1; \
 	fi; \
 	notes=$$($(MAKE) -s release-notes); \
@@ -140,6 +159,9 @@ help: ## Show this help
 	@echo "  1. make check-updates             # see what's new upstream"
 	@echo "  2. make update-kae-dbt tag=0.6.0  # pull new version"
 	@echo "  3. edit manifest.yml              # update the version"
-	@echo "  4. make pr                        # verify, commit, push, open PR"
+	@echo "  4. make pr                        # verify, commit, push, open PR (auto-versions)"
 	@echo "  5. (review and merge PR)"
-	@echo "  6. make tag v=2026.03             # tag main, create GH release"
+	@echo "  6. make tag                       # tag main, create GH release (auto-versions)"
+	@echo ""
+	@echo "Versioning: YYYY.MM.MICRO (e.g., 2026.03.1, 2026.03.2)"
+	@echo "Auto-increments micro from existing tags. Override with v=2026.03.1"
