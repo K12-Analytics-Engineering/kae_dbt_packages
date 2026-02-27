@@ -1,0 +1,53 @@
+# kae-dbt-packages manifest
+# Tracks upstream package versions vendored in this monorepo.
+# Update this file whenever a package is added or upgraded.
+
+packages:
+
+  dbt_utils:
+    upstream: dbt-labs/dbt-utils
+    version: "1.1.2"
+    require_dbt_version: ">=1.3.0, <3.0.0"
+    files_stripped:
+      - dev-requirements.txt
+      - Makefile
+
+  dbt_external_tables:
+    upstream: dbt-labs/dbt-external-tables
+    version: "0.12.0"
+    require_dbt_version: ">=1.0.0, <3.0.0"
+    files_stripped:
+      - pyproject.toml
+      - uv.lock
+
+  kae_dbt:
+    upstream: K12-Analytics-Engineering/kae_dbt
+    version: "0.6.0"
+    require_dbt_version: ">=1.5.0"
+    files_stripped:
+      - pyproject.toml
+      - uv.lock
+      - poetry.lock
+
+  dbt_expectations:
+    upstream: calogica/dbt-expectations
+    version: "0.10.4"
+    require_dbt_version: ">=1.2.0, <2.0.0"
+    depends_on:
+      - dbt_date
+    files_stripped: []
+
+  dbt_date:
+    upstream: calogica/dbt-date
+    version: "0.10.1"
+    require_dbt_version: ">=1.2.0, <2.0.0"
+    files_stripped: []
+
+  dbt_project_evaluator:
+    upstream: dbt-labs/dbt-project-evaluator
+    version: "1.0.2"
+    require_dbt_version: ">=1.8.0, <2.0.0"
+    depends_on:
+      - dbt_utils
+    files_stripped:
+      - requirements.txt
