@@ -1,4 +1,4 @@
-# kae-dbt-packages
+# kae_dbt_packages
 
 Vendored dbt packages for KAE client repos. Python manifest files (lockfiles, requirements.txt, pyproject.toml) and dbt dependency files (packages.yml) are stripped to prevent Dependabot CVE alerts and `dbt deps` source conflicts in downstream repos.
 
@@ -8,13 +8,13 @@ In your client repo's `packages.yml`:
 
 ```yaml
 packages:
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: dbt_utils
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: dbt_external_tables
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: kae_dbt
 ```
@@ -22,13 +22,13 @@ packages:
 Optional packages (add only if needed):
 
 ```yaml
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: dbt_expectations
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: dbt_date
-  - git: https://github.com/K12-Analytics-Engineering/kae-dbt-packages.git
+  - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
     revision: 2026.02
     subdirectory: dbt_project_evaluator
 ```
