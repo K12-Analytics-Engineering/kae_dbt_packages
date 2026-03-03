@@ -13,6 +13,19 @@ update: ## Update a package: make update pkg=dbt_utils repo=dbt-labs/dbt-utils t
 	@echo ""
 	@echo "REMINDER: update manifest.yml with the new version for $(pkg)"
 
+.PHONY: update-all
+update-all: ## Re-pull all packages at versions listed in manifest.yml
+	@echo "Updating all packages from manifest.yml..."; \
+	echo ""; \
+	grep -E '^\s{2}\w' manifest.yml | sed 's/://' | while read pkg; do \
+		upstream=$$(grep -A1 "^  $$pkg:" manifest.yml | grep 'upstream:' | awk '{print $$2}'); \
+		version=$$(grep -A2 "^  $$pkg:" manifest.yml | grep 'version:' | sed 's/.*"\(.*\)"/\1/'); \
+		echo ""; \
+		./scripts/update_package.sh "$$pkg" "$$upstream" "$$version"; \
+	done; \
+	echo ""; \
+	echo "All packages updated."
+
 .PHONY: verify
 verify: ## Verify no Python manifest files exist in any package
 	@echo "Checking for Python manifest files..."
