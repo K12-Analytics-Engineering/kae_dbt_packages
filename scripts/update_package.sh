@@ -14,7 +14,9 @@
 #   2. Replaces the existing subdirectory in this monorepo
 #   3. Strips Python manifest files that trigger Dependabot alerts
 #   4. Strips dev/CI files not needed at runtime
-#   5. Shows a summary of what changed
+#   5. Strips non-runtime files (.py, .sh) and .gitkeep placeholders
+#   6. Normalizes line endings to LF (some upstream files ship with CRLF)
+#   7. Shows a summary of what changed
 #
 
 set -euo pipefail
@@ -39,10 +41,18 @@ trap 'rm -rf "$STAGING_DIR"' EXIT
 echo "Updating $PACKAGE_NAME from $UPSTREAM_REPO @ $TAG"
 echo "=================================================="
 
-# Clone upstream at tag
+# Clone upstream at tag (try as-is, then toggle v-prefix)
 echo ""
 echo "Cloning upstream..."
-git clone --depth 1 --branch "$TAG" "https://github.com/$UPSTREAM_REPO.git" "$STAGING_DIR/$PACKAGE_NAME" 2>&1 | grep -v "^$"
+if ! git clone --depth 1 --branch "$TAG" "https://github.com/$UPSTREAM_REPO.git" "$STAGING_DIR/$PACKAGE_NAME" 2>&1 | grep -v "^$"; then
+    rm -rf "$STAGING_DIR/$PACKAGE_NAME"
+    case "$TAG" in
+        v*) ALT_TAG="${TAG#v}" ;;
+        *)  ALT_TAG="v$TAG" ;;
+    esac
+    echo "  tag '$TAG' not found, trying '$ALT_TAG'..."
+    git clone --depth 1 --branch "$ALT_TAG" "https://github.com/$UPSTREAM_REPO.git" "$STAGING_DIR/$PACKAGE_NAME" 2>&1 | grep -v "^$"
+fi
 
 # Remove old package directory (preserve monorepo root files)
 if [ -d "$PACKAGE_DIR" ]; then
@@ -147,10 +157,49 @@ if [ "$nr_stripped" -eq 0 ]; then
     echo "  (none found)"
 fi
 
+# Strip non-runtime files by extension
+# dbt runtime uses .sql (macros/models), .yml (config), .csv (seeds) — never .py or .sh
+NON_RUNTIME_EXTS=("*.py" "*.sh")
+
+echo ""
+echo "Stripping non-runtime files..."
+nr_files_stripped=0
+for pattern in "${NON_RUNTIME_EXTS[@]}"; do
+    while IFS= read -r -d '' file; do
+        rm "$file"
+        echo "  removed ${file#$PACKAGE_DIR/}"
+        ((nr_files_stripped++))
+    done < <(find "$PACKAGE_DIR" -name "$pattern" -print0 2>/dev/null)
+done
+
+if [ "$nr_files_stripped" -eq 0 ]; then
+    echo "  (none found)"
+fi
+
+# Strip .gitkeep placeholders and clean up empty directories
+find "$PACKAGE_DIR" -name ".gitkeep" -delete 2>/dev/null || true
+find "$PACKAGE_DIR" -type d -empty -delete 2>/dev/null || true
+
+# Normalize line endings to LF (some upstream files ship with CRLF)
+echo ""
+echo "Normalizing line endings..."
+crlf_fixed=0
+while IFS= read -r -d '' file; do
+    if file "$file" | grep -q "CRLF"; then
+        sed -i '' $'s/\r$//' "$file"
+        echo "  fixed ${file#$PACKAGE_DIR/}"
+        ((crlf_fixed++))
+    fi
+done < <(find "$PACKAGE_DIR" -type f \( -name "*.sql" -o -name "*.yml" -o -name "*.yaml" -o -name "*.md" -o -name "*.csv" -o -name "*.txt" \) -print0 2>/dev/null)
+
+if [ "$crlf_fixed" -eq 0 ]; then
+    echo "  (all files already LF)"
+fi
+
 # Summary
 echo ""
 echo "Done. $PACKAGE_NAME updated to $TAG."
-echo "Stripped $stripped Python manifest(s), $dbt_stripped dbt dep file(s), $dev_stripped dev file(s), $nr_stripped non-runtime dir(s)."
+echo "Stripped $stripped manifest(s), $dbt_stripped dbt dep(s), $dev_stripped dev file(s), $nr_stripped non-runtime dir(s), $nr_files_stripped non-runtime file(s). Fixed $crlf_fixed CRLF file(s)."
 echo ""
 echo "Next steps:"
 echo "  1. Update manifest.yml with the new version"
