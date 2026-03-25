@@ -111,6 +111,88 @@ pkg-release-tag version="":
     echo ""
     echo "Done. Consumer repos should use: revision: $tag"
 
+# Verify all vendored packages parse cleanly against a dbt version (usage: just pkg-parse-check 1.11.7 1.11.1)
+pkg-parse-check dbt-core-version dbt-bigquery-version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+
+    # symlink all vendored packages
+    mkdir -p "$tmpdir/dbt_packages"
+    for pkg in */dbt_project.yml; do
+        pkg_dir=$(dirname "$pkg")
+        ln -s "$(pwd)/$pkg_dir" "$tmpdir/dbt_packages/$pkg_dir"
+    done
+
+    # minimal dbt project
+    cat > "$tmpdir/dbt_project.yml" << 'PROJ'
+    name: 'verify'
+    version: '1.0.0'
+    profile: 'verify'
+    PROJ
+
+    cat > "$tmpdir/profiles.yml" << 'PROF'
+    verify:
+      target: dev
+      outputs:
+        dev:
+          type: bigquery
+          method: oauth
+          project: dummy
+          dataset: dummy
+    PROF
+
+    echo "Parsing vendored packages against dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}}"
+    echo ""
+
+    # run dbt parse, capture output and exit code
+    set +e
+    output=$(cd "$tmpdir" && uvx \
+        --from "dbt-core=={{dbt-core-version}}" \
+        --with "dbt-bigquery=={{dbt-bigquery-version}}" \
+        dbt parse --profiles-dir . --no-partial-parse --show-all-deprecations 2>&1)
+    exit_code=$?
+    set -e
+
+    # check for uvx/resolution failure
+    if [ $exit_code -ne 0 ] && echo "$output" | grep -q 'No solution found\|no version of'; then
+        echo "FAIL: Could not resolve dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}}"
+        echo ""
+        echo "$output" | tail -5
+        exit 1
+    fi
+
+    # strip ANSI codes and uvx download noise
+    clean=$(echo "$output" \
+        | sed 's/\x1b\[[0-9;]*m//g' \
+        | grep -v '^Downloading \|^ Downloading \|^Installed ')
+
+    # check for parse failure (dbt prints ERROR on fatal issues)
+    if echo "$clean" | grep -q '\[ERROR\]'; then
+        echo "FAIL: dbt parse failed"
+        echo ""
+        echo "$clean"
+        exit 1
+    fi
+
+    # extract warning lines and the detail lines that follow them
+    warnings=$(echo "$clean" | sed -n '/\[WARNING\]/,/^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/{ /^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/!p; /\[WARNING\]/p; }' || true)
+    warning_count=$(echo "$clean" | grep -c '\[WARNING\]' || true)
+
+    # report
+    if [ "$warning_count" -gt 0 ]; then
+        echo "PASS with $warning_count warning(s):"
+        echo ""
+        echo "$clean" | grep -v '^$' | grep -v 'Running with dbt=' | grep -v 'Registered adapter' | grep -v 'Performance info' | grep -v 'partial parsing'
+        echo ""
+        echo "---"
+        echo "These are deprecation warnings, not errors. Review before upgrading."
+    else
+        echo "PASS: All packages parsed cleanly. No warnings."
+    fi
+
 # Check upstream repos for newer versions
 pkg-check-updates:
     #!/usr/bin/env bash
