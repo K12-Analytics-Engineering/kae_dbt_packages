@@ -90,7 +90,10 @@ pkg-release-pr version="":
     echo ""
     git checkout -b "$branch"
     git add -A
-    printf '%s vendored package bundle\n\n%s\n' "$tag" "$notes" | git commit -F -
+    # changes may already be committed on the branch; only commit what's left
+    if ! git diff --cached --quiet; then
+        printf '%s vendored package bundle\n\n%s\n' "$tag" "$notes" | git commit -F -
+    fi
     git push -u origin "$branch"
     gh pr create --title "$tag" --body "$notes"
     echo ""
