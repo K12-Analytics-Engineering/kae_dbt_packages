@@ -41,13 +41,14 @@ pkg-verify:
     fi
 
 # Generate release notes from manifest.yml
-pkg-release-notes:
+pkg-release-notes manifest="manifest.yml":
     #!/usr/bin/env bash
     set -euo pipefail
+    manifest="{{manifest}}"
     echo "| Package | Version |"
     echo "|---|---|"
-    grep -E '^\s{2}\w' manifest.yml | sed 's/://' | while read pkg; do
-        version=$(grep -A2 "^  ${pkg}:" manifest.yml | grep 'version:' | sed 's/.*"\(.*\)"/\1/')
+    grep -E '^\s{2}\w' "$manifest" | sed 's/://' | while read pkg; do
+        version=$(grep -A2 "^  ${pkg}:" "$manifest" | grep 'version:' | sed 's/.*"\(.*\)"/\1/')
         echo "| $pkg | $version |"
     done
     echo ""
@@ -77,7 +78,9 @@ pkg-release-pr version="":
     #!/usr/bin/env bash
     set -euo pipefail
     just pkg-verify
-    tag="${{ if version != "" { version } else { "$(just next-version)" } }}"
+    git fetch --quiet --tags origin
+    tag="{{version}}"
+    if [ -z "$tag" ]; then tag=$(just next-version); fi
     branch="release/$tag"
     notes=$(just pkg-release-notes)
     echo ""
@@ -87,7 +90,10 @@ pkg-release-pr version="":
     echo ""
     git checkout -b "$branch"
     git add -A
-    printf '%s vendored package bundle\n\n%s\n' "$tag" "$notes" | git commit -F -
+    # changes may already be committed on the branch; only commit what's left
+    if ! git diff --cached --quiet; then
+        printf '%s vendored package bundle\n\n%s\n' "$tag" "$notes" | git commit -F -
+    fi
     git push -u origin "$branch"
     gh pr create --title "$tag" --body "$notes"
     echo ""
@@ -97,34 +103,33 @@ pkg-release-pr version="":
 pkg-release-tag version="":
     #!/usr/bin/env bash
     set -euo pipefail
-    tag="${{ if version != "" { version } else { "$(just next-version)" } }}"
-    if git rev-parse "$tag" >/dev/null 2>&1; then
+    # tag origin/main directly (no checkout), so this works from main, any branch, or a worktree
+    git fetch --quiet --tags origin main
+    tag="{{version}}"
+    if [ -z "$tag" ]; then tag=$(just next-version); fi
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
         echo "Tag $tag already exists."
         exit 1
     fi
-    notes=$(just pkg-release-notes)
-    git checkout main
-    git pull origin main
-    git tag "$tag"
+    # release notes come from the manifest on origin/main, not the local checkout
+    manifest=$(mktemp)
+    trap 'rm -f "$manifest"' EXIT
+    git show origin/main:manifest.yml > "$manifest"
+    notes=$(just pkg-release-notes "$manifest")
+    git tag "$tag" origin/main
     git push origin "$tag"
     gh release create "$tag" --title "$tag" --notes "$notes"
     echo ""
     echo "Done. Consumer repos should use: revision: $tag"
 
-# Verify all vendored packages parse cleanly against a dbt version (usage: just pkg-parse-check 1.11.7 1.11.1)
-pkg-parse-check dbt-core-version dbt-bigquery-version:
+# Verify all vendored packages install and parse against a dbt version (usage: just pkg-parse-check 1.12.7 1.12.3 [python])
+pkg-parse-check dbt-core-version dbt-bigquery-version python-version="3.13":
     #!/usr/bin/env bash
     set -euo pipefail
 
+    repo=$(pwd)
     tmpdir=$(mktemp -d)
     trap 'rm -rf "$tmpdir"' EXIT
-
-    # symlink all vendored packages
-    mkdir -p "$tmpdir/dbt_packages"
-    for pkg in */dbt_project.yml; do
-        pkg_dir=$(dirname "$pkg")
-        ln -s "$(pwd)/$pkg_dir" "$tmpdir/dbt_packages/$pkg_dir"
-    done
 
     # minimal dbt project
     cat > "$tmpdir/dbt_project.yml" << 'PROJ'
@@ -144,41 +149,60 @@ pkg-parse-check dbt-core-version dbt-bigquery-version:
           dataset: dummy
     PROF
 
-    echo "Parsing vendored packages against dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}}"
+    # declare every vendored package as a local package; dbt 1.12+ refuses to
+    # parse when dbt_packages/ doesn't match packages.yml, so install via dbt deps
+    echo "packages:" > "$tmpdir/packages.yml"
+    for pkg in */dbt_project.yml; do
+        echo "  - local: $repo/$(dirname "$pkg")" >> "$tmpdir/packages.yml"
+    done
+
+    # pin Python: uvx otherwise picks the system default, and dbt can crash on
+    # an interpreter newer than it supports
+    dbt() {
+        uvx --python "{{python-version}}" \
+            --from "dbt-core=={{dbt-core-version}}" \
+            --with "dbt-bigquery=={{dbt-bigquery-version}}" \
+            dbt "$@"
+    }
+
+    clean() {
+        sed 's/\x1b\[[0-9;]*m//g' \
+            | grep -v '^Downloading \|^ Downloading \|^ Downloaded \|^Installed \|^ *Built \|^ *Building '
+    }
+
+    fail() {
+        echo "FAIL: $1"
+        echo ""
+        echo "$2"
+        exit 1
+    }
+
+    echo "Parsing vendored packages against dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}} (Python {{python-version}})"
     echo ""
 
-    # run dbt parse, capture output and exit code
     set +e
-    output=$(cd "$tmpdir" && uvx \
-        --from "dbt-core=={{dbt-core-version}}" \
-        --with "dbt-bigquery=={{dbt-bigquery-version}}" \
-        dbt parse --profiles-dir . --no-partial-parse --show-all-deprecations 2>&1)
+    output=$(cd "$tmpdir" && dbt deps --profiles-dir . 2>&1)
     exit_code=$?
     set -e
-
-    # check for uvx/resolution failure
-    if [ $exit_code -ne 0 ] && echo "$output" | grep -q 'No solution found\|no version of'; then
-        echo "FAIL: Could not resolve dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}}"
-        echo ""
-        echo "$output" | tail -5
-        exit 1
+    if [ $exit_code -ne 0 ]; then
+        if echo "$output" | grep -q 'No solution found\|no version of'; then
+            fail "Could not resolve dbt-core=={{dbt-core-version}} dbt-bigquery=={{dbt-bigquery-version}} on Python {{python-version}}" "$(echo "$output" | tail -5)"
+        fi
+        fail "dbt deps exited $exit_code" "$(echo "$output" | clean)"
     fi
 
-    # strip ANSI codes and uvx download noise
-    clean=$(echo "$output" \
-        | sed 's/\x1b\[[0-9;]*m//g' \
-        | grep -v '^Downloading \|^ Downloading \|^Installed ')
+    set +e
+    output=$(cd "$tmpdir" && dbt parse --profiles-dir . --no-partial-parse --show-all-deprecations 2>&1)
+    exit_code=$?
+    set -e
+    clean=$(echo "$output" | clean)
 
-    # check for parse failure (dbt prints ERROR on fatal issues)
-    if echo "$clean" | grep -q '\[ERROR\]'; then
-        echo "FAIL: dbt parse failed"
-        echo ""
-        echo "$clean"
-        exit 1
+    # any nonzero exit is a failure, whether or not dbt printed [ERROR]
+    # (a crash on import prints only a traceback)
+    if [ $exit_code -ne 0 ] || echo "$clean" | grep -q '\[ERROR\]'; then
+        fail "dbt parse exited $exit_code" "$clean"
     fi
 
-    # extract warning lines and the detail lines that follow them
-    warnings=$(echo "$clean" | sed -n '/\[WARNING\]/,/^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/{ /^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/!p; /\[WARNING\]/p; }' || true)
     warning_count=$(echo "$clean" | grep -c '\[WARNING\]' || true)
 
     # report
@@ -188,7 +212,7 @@ pkg-parse-check dbt-core-version dbt-bigquery-version:
         echo "$clean" | grep -v '^$' | grep -v 'Running with dbt=' | grep -v 'Registered adapter' | grep -v 'Performance info' | grep -v 'partial parsing'
         echo ""
         echo "---"
-        echo "These are deprecation warnings, not errors. Review before upgrading."
+        echo "These are warnings, not errors. Review before upgrading."
     else
         echo "PASS: All packages parsed cleanly. No warnings."
     fi

@@ -86,7 +86,7 @@ for pattern in "${PYTHON_MANIFESTS[@]}"; do
     while IFS= read -r -d '' file; do
         rm "$file"
         echo "  removed ${file#$PACKAGE_DIR/}"
-        ((stripped++))
+        stripped=$((stripped + 1))
     done < <(find "$PACKAGE_DIR" -name "$pattern" -print0 2>/dev/null)
 done
 
@@ -102,7 +102,7 @@ for pattern in "${DBT_DEP_FILES[@]}"; do
     while IFS= read -r -d '' file; do
         rm "$file"
         echo "  removed ${file#$PACKAGE_DIR/}"
-        ((dbt_stripped++))
+        dbt_stripped=$((dbt_stripped + 1))
     done < <(find "$PACKAGE_DIR" -name "$pattern" -print0 2>/dev/null)
 done
 
@@ -130,7 +130,7 @@ for pattern in "${DEV_PATTERNS[@]}"; do
     while IFS= read -r -d '' item; do
         rm -rf "$item"
         echo "  removed ${item#$PACKAGE_DIR/}"
-        ((dev_stripped++))
+        dev_stripped=$((dev_stripped + 1))
     done < <(find "$PACKAGE_DIR" -maxdepth 1 -name "$pattern" -print0 2>/dev/null)
 done
 
@@ -149,7 +149,7 @@ for pattern in "${NON_RUNTIME_DIRS[@]}"; do
     while IFS= read -r -d '' item; do
         rm -rf "$item"
         echo "  removed ${item#$PACKAGE_DIR/}"
-        ((nr_stripped++))
+        nr_stripped=$((nr_stripped + 1))
     done < <(find "$PACKAGE_DIR" -maxdepth 1 -type d -name "$pattern" -print0 2>/dev/null)
 done
 
@@ -168,7 +168,7 @@ for pattern in "${NON_RUNTIME_EXTS[@]}"; do
     while IFS= read -r -d '' file; do
         rm "$file"
         echo "  removed ${file#$PACKAGE_DIR/}"
-        ((nr_files_stripped++))
+        nr_files_stripped=$((nr_files_stripped + 1))
     done < <(find "$PACKAGE_DIR" -name "$pattern" -print0 2>/dev/null)
 done
 
@@ -186,9 +186,10 @@ echo "Normalizing line endings..."
 crlf_fixed=0
 while IFS= read -r -d '' file; do
     if file "$file" | grep -q "CRLF"; then
-        sed -i '' $'s/\r$//' "$file"
+        # -i.bak plus rm is the one in-place form both GNU and BSD sed accept
+        sed -i.bak $'s/\r$//' "$file" && rm -f "$file.bak"
         echo "  fixed ${file#$PACKAGE_DIR/}"
-        ((crlf_fixed++))
+        crlf_fixed=$((crlf_fixed + 1))
     fi
 done < <(find "$PACKAGE_DIR" -type f \( -name "*.sql" -o -name "*.yml" -o -name "*.yaml" -o -name "*.md" -o -name "*.csv" -o -name "*.txt" \) -print0 2>/dev/null)
 

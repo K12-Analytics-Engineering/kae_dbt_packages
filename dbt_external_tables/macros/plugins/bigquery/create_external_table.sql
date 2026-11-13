@@ -5,6 +5,15 @@
     {%- set options = external.options -%}
     {%- set non_string_options = ['max_staleness'] %}
 
+    {#-
+      Initialize connection_name locally so it cannot inherit a value from the
+      surrounding Jinja context. Without this, the rare bug case is: a source omits
+      connection_name in external.options AND the calling context leaks a
+      connection_name.
+      The unset variable would then fall through to that leaked value and render an
+      invalid `with connection` clause that BigQuery rejects.
+    -#}
+    {%- set connection_name = none -%}
     {% if options is mapping and options.get('connection_name', none) %}
         {% set connection_name = options.pop('connection_name') %}
     {% endif %}
@@ -32,7 +41,11 @@
         ) {% endif -%}
         {% endif %}
         {% if connection_name %}
-            with connection `{{ connection_name }}`
+            {% if connection_name | upper == 'DEFAULT' %}
+                with connection DEFAULT
+            {% else %}
+                with connection `{{ connection_name }}`
+            {% endif %}
         {% endif %}
         options (
             uris = [{%- for uri in uris -%} '{{uri}}' {{- "," if not loop.last}} {%- endfor -%}]

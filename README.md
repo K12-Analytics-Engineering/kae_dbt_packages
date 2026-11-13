@@ -4,18 +4,19 @@ Vendored dbt packages for KAE client repos. Python manifest files (lockfiles, re
 
 ## Usage
 
-In your client repo's `packages.yml`:
+In your client repo's `packages.yml`, set `revision` to the latest
+[release](https://github.com/K12-Analytics-Engineering/kae_dbt_packages/releases) tag (calver, `YYYY.MM.MICRO`):
 
 ```yaml
 packages:
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: dbt_utils
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: dbt_external_tables
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: kae_dbt
 ```
 
@@ -23,13 +24,13 @@ Optional packages (add only if needed):
 
 ```yaml
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: dbt_expectations
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: dbt_date
   - git: https://github.com/K12-Analytics-Engineering/kae_dbt_packages.git
-    revision: 2026.02
+    revision: 2026.11.1
     subdirectory: dbt_project_evaluator
 ```
 
@@ -37,20 +38,26 @@ Note: `dbt_date` is a dependency of `dbt_expectations` — include both if using
 
 ## Updating a package
 
+Recipes live in the `justfile` (run `just --list` for all of them). They work the same from a regular checkout or a git worktree, on macOS or Linux.
+
 ```bash
 # Check what's new upstream
-make check-updates
+just pkg-check-updates
 
-# Update a package (pulls upstream tag, strips manifests and dev files)
-make update-kae-dbt tag=0.6.0
+# Update a package (pulls the upstream tag, strips manifests and dev files)
+just pkg-update dbt_utils dbt-labs/dbt-utils 1.4.1
 
-# Update manifest.yml with the new version, then:
-make pr              # verify, commit, push, open PR
+# Update manifest.yml with the new version, then verify
+just pkg-verify                         # no Python manifest files left behind
+just pkg-parse-check 1.12.7 1.12.3      # dbt-core, dbt-bigquery [, python=3.13] to install + parse against
+
+# Release
+just pkg-release-pr                     # verify, commit, push, open PR
 # (review and merge PR)
-make tag v=2026.03   # tag main, create GH release
+just pkg-release-tag                    # tag main, create GH release
 ```
 
-Run `make help` for the full list of targets.
+`pkg-update-all` re-pulls every package at the versions in `manifest.yml`.
 
 ## Current versions
 
